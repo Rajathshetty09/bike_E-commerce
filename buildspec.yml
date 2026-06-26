@@ -1,0 +1,44 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - AWS_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
+      - echo "Target Repository URI is $REPOSITORY_URI"
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REPOSITORY_URI
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:-latest}
+  build:
+    commands:
+      - echo Build started on `date`
+      
+      # 1. Build and Tag Frontend (using the 'client' directory)
+      - echo Building the Frontend Docker image...
+      - cd client && docker build -t $REPOSITORY_URI:frontend-$IMAGE_TAG -t $REPOSITORY_URI:frontend-latest . && cd ..
+      
+      # 2. Build and Tag Backend (using the 'server' directory)
+      - echo Building the Backend Docker image...
+      - cd server && docker build -t $REPOSITORY_URI:backend-$IMAGE_TAG -t $REPOSITORY_URI:backend-latest . && cd ..
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      
+      # 1. Push Frontend Images
+      - echo Pushing the Frontend Docker images...
+      - docker push $REPOSITORY_URI:frontend-$IMAGE_TAG
+      - docker push $REPOSITORY_URI:frontend-latest
+      
+      
+      # 3. Create Image Definition files for ECS deployment
+      - echo Writing image definitions for ECS...
+      - printf '[{"name":"%s","imageUri":"%s"}]' "$FRONTEND_CONTAINER_NAME" "$REPOSITORY_URI:frontend-$IMAGE_TAG" > rajath_imagedefinitions.json
+      
+
+artifacts:
+  files:
+    - rajath_imagedefinitions.json
+    
