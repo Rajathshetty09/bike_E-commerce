@@ -1,20 +1,16 @@
-# 1. Use the Node base image
-FROM public.ecr.aws/docker/library/node:18-alpine
-
-# 2. Set the working directory inside the container
+# --- Build Stage ---
+FROM public.ecr.aws/docker/library/node:18-alpine AS builder
 WORKDIR /srv/app
-
-# 3. Copy package files first to leverage Docker cache
 COPY package.json pnpm-lock.yaml* ./
-
-# 4. Install dependencies (Assuming you are using pnpm based on your file list)
 RUN npm install -g pnpm && pnpm install
-
-# 5. Copy the rest of your application files
 COPY . .
+# Run your frontend build command (e.g., pnpm build)
+RUN pnpm build
 
-# 6. Open the port your application listens on
-EXPOSE 8000
-
-# 7. Start your actual node application server (keeps container running)
-CMD ["pnpm", "start"]
+# --- Production Stage ---
+FROM public.ecr.aws/docker/library/nginx:alpine
+# Copy the built static files from the builder stage over to nginx HTML directory
+# Note: Check if your build output folder is 'dist' or 'build' and change accordingly
+COPY --from=builder /srv/app/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
